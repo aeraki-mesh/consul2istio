@@ -1,0 +1,64 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: consul2istio
+  labels:
+    app: consul2istio
+spec:
+  selector:
+    matchLabels:
+      app: consul2istio
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: consul2istio
+    spec:
+      serviceAccountName: consul2istio
+      containers:
+        - name: consul2istio
+          image: aeraki/consul2istio
+          env:
+            - name: consulAddress
+              value: "consul:8500"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: consul2istio
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app: consul2istio
+  name: consul2istio
+rules:
+  - apiGroups:
+      - networking.istio.io
+    resources:
+      - serviceentries
+    verbs:
+      - get
+      - watch
+      - list
+      - update
+      - patch
+      - create
+      - delete
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  labels:
+    app: consul2istio
+  name: consul2istio
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: consul2istio
+subjects:
+  - kind: ServiceAccount
+    name: consul2istio
+    namespace: istio-system
