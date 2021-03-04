@@ -20,6 +20,7 @@ import (
 	"syscall"
 
 	"github.com/aeraki-framework/consul2istio/pkg"
+	"istio.io/pkg/log"
 )
 
 const (
@@ -32,7 +33,11 @@ func main() {
 	controller := pkg.NewController(*consulAddress)
 	// Create the stop channel for all of the servers.
 	stopChan := make(chan struct{}, 1)
-	controller.Run(stopChan)
+	err := controller.Run(stopChan)
+	if err != nil {
+		log.Errorf("Fialed to run controller: %v", err)
+		return
+	}
 
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
