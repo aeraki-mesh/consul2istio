@@ -33,20 +33,18 @@ const (
 )
 
 func convertServiceEntry(service string, endpoints []*api.CatalogService) *istio.ServiceEntry {
-	name := ""
 	location := istio.ServiceEntry_MESH_INTERNAL
 	resolution := istio.ServiceEntry_STATIC
 	ports := make(map[uint32]*istio.Port)
 	workloadEntries := make([]*istio.WorkloadEntry, 0)
 
 	for _, endpoint := range endpoints {
-		name = endpoint.ServiceName
 
 		port := convertPort(endpoint.ServicePort, endpoint.ServiceMeta[protocolTagName])
 
 		if svcPort, exists := ports[port.Number]; exists && svcPort.Protocol != port.Protocol {
 			log.Warnf("Service %v has two instances on same port %v but different protocols (%v, %v)",
-				name, port.Number, svcPort.Protocol, port.Protocol)
+				endpoint.ServiceName, port.Number, svcPort.Protocol, port.Protocol)
 		} else {
 			ports[port.Number] = port
 		}
@@ -96,12 +94,12 @@ func convertWorkloadEntry(endpoint *api.CatalogService) *istio.WorkloadEntry {
 func convertLabels(labelsStr []string) labels.Instance {
 	out := make(labels.Instance, len(labelsStr))
 	for _, tag := range labelsStr {
-		vals := strings.Split(tag, "|")
-		// Labels not of form "key|value" are ignored to avoid possible collisions
+		vals := strings.Split(tag, "=")
+		// Labels not of form "key=value" are ignored to avoid possible collisions
 		if len(vals) > 1 {
 			out[vals[0]] = vals[1]
 		} else {
-			log.Debugf("Tag %v ignored since it is not of form key|value", tag)
+			log.Debugf("Tag %v ignored since it is not of form key=value", tag)
 		}
 	}
 	return out
