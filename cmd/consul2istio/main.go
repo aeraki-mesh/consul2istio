@@ -35,7 +35,7 @@ func main() {
 	stopChan := make(chan struct{}, 1)
 	err := controller.Run(stopChan)
 	if err != nil {
-		log.Errorf("Fialed to run controller: %v", err)
+		log.Errorf("Failed to run controller: %v", err)
 		return
 	}
 
