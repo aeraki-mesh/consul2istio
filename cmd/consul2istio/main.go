@@ -24,23 +24,27 @@ import (
 )
 
 const (
-	defaultConsulAddress = "127.0.0.1:8500"
+	sitConsulAddress     = "10.4.45.40:8500"
+	defaultConsulAddress = "localhost:30395"
 )
 
 func main() {
-	consulAddress := flag.String("consulAddress", defaultConsulAddress, "Consul Address")
+	consulAddress := flag.String("consulAddress", sitConsulAddress, "Consul Address")
 	flag.Parse()
-	controller := pkg.NewController(*consulAddress)
+
+	server := pkg.NewServer(*consulAddress)
+
 	// Create the stop channel for all of the servers.
 	stopChan := make(chan struct{}, 1)
-	err := controller.Run(stopChan)
-	if err != nil {
+	if err := server.Run(stopChan); err != nil {
 		log.Errorf("Failed to run controller: %v", err)
 		return
 	}
 
+	// server graceful shutdown
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
 	<-signalChan
+
 	stopChan <- struct{}{}
 }
