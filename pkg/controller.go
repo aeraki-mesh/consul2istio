@@ -46,59 +46,60 @@ const (
 	// configRootNS is the root config root namespace
 	configRootNS = "istio-system"
 
-	// aerakiFieldManager is the FileldManager for Aeraki CRDs
+	// aerakiFieldManager is the FieldManager for Aeraki CRDs
 	aerakiFieldManager = "Aeraki"
 )
 
-type ChangeEvent struct {
-}
+type ChangeEvent struct{}
 
-type Controller struct {
+type Server struct {
 	consulAddress string
 	pushChannel   chan *ChangeEvent
 	registry      serviceregistry.Registry
 }
 
-func NewController(consulAddress string) *Controller {
-	controller := &Controller{
+func NewServer(consulAddress string) *Server {
+	return &Server{
 		consulAddress: consulAddress,
 		pushChannel:   make(chan *ChangeEvent),
 	}
-	return controller
 }
 
 // Run until a signal is received, this function won't block
-func (s *Controller) Run(stop <-chan struct{}) error {
+func (s *Server) Run(stop <-chan struct{}) error {
 	log.Infof("Watch Consul at %s", s.consulAddress)
 	if err := s.watchRegistry(stop); err != nil {
 		log.Fatala(err)
 		return err
 	}
+
 	go func() {
 		s.mainLoop(stop)
 	}()
+
 	return nil
 }
 
-func (s *Controller) watchRegistry(stop <-chan struct{}) error {
-	var err error
+func (s *Server) watchRegistry(stop <-chan struct{}) (err error) {
 	s.registry, err = consul.NewController(s.consulAddress)
 	if err != nil {
-		return err
+		return
 	}
 
-	s.registry.AppendServiceChangeHandler(func() {
-		s.pushChannel <- &ChangeEvent{}
-	})
-	//@todo gracefully close the registry controller
+	s.registry.AppendServiceChangeHandler(func() { s.pushChannel <- &ChangeEvent{} })
+
+	// TODO: gracefully close the registry controller
 	s.registry.Run(stop)
-	return nil
+
+	return
 }
 
-func (s *Controller) mainLoop(stop <-chan struct{}) {
-	var timeChan <-chan time.Time
-	var startDebounce time.Time
-	var lastResourceUpdateTime time.Time
+func (s *Server) mainLoop(stop <-chan struct{}) {
+	var (
+		timeChan                              <-chan time.Time
+		startDebounce, lastResourceUpdateTime time.Time
+	)
+
 	pushCounter := 0
 	debouncedEvents := 0
 
@@ -106,31 +107,38 @@ func (s *Controller) mainLoop(stop <-chan struct{}) {
 		select {
 		case <-stop:
 			break
+
 		case e := <-s.pushChannel:
-			log.Debugf("Receive event from push chanel : %v", e)
+			log.Debugf("Receive event from push channel : %v", e)
+
 			lastResourceUpdateTime = time.Now()
 			if debouncedEvents == 0 {
 				log.Debugf("This is the first debounced event")
 				startDebounce = lastResourceUpdateTime
 			}
+
 			timeChan = time.After(debounceAfter)
 			debouncedEvents++
+
 		case <-timeChan:
-			log.Debugf("Receive event from time chanel")
+			log.Debugf("Receive event from time channel")
+
 			eventDelay := time.Since(startDebounce)
 			quietTime := time.Since(lastResourceUpdateTime)
-			// it has been too long since the first debounced event or quiet enough since the last debounced event
+
+			// It has been too long since the first debounced event or quiet enough since the last debounced event
 			if eventDelay >= debounceMax || quietTime >= debounceAfter {
 				if debouncedEvents > 0 {
 					pushCounter++
 					log.Infof("Push debounce stable[%d] %d: %v since last change, %v since last push",
 						pushCounter, debouncedEvents, quietTime, eventDelay)
-					err := s.pushConsulService2APIServer()
-					if err != nil {
-						log.Errorf("Failed to synchronize consul services to Istio: %v", err)
-						// Retry if failed
-						s.pushChannel <- &ChangeEvent{}
+
+					if err := s.pushConsulService2APIServer(); err != nil {
+						log.Errorf("Failed to synchronize Consul services to Istio: %v", err)
+						//Retry if failed
+						//s.pushChannel <- &ChangeEvent{}
 					}
+					log.Infof("Synchronize Consul services to Istio finished, watching for changes...")
 					debouncedEvents = 0
 				}
 			} else {
@@ -140,7 +148,7 @@ func (s *Controller) mainLoop(stop <-chan struct{}) {
 	}
 }
 
-func (s *Controller) pushConsulService2APIServer() error {
+func (s *Server) pushConsulService2APIServer() error {
 	serviceEntries, err := s.registry.ServiceEntries()
 	if err != nil {
 		return fmt.Errorf("failed to get servcies from consul: %v", err)
@@ -151,12 +159,12 @@ func (s *Controller) pushConsulService2APIServer() error {
 		newServiceEntries[serviceEntry.Hosts[0]] = serviceEntry
 	}
 
-	config, err := config.GetConfig()
+	conf, err := config.GetConfig()
 	if err != nil {
 		return fmt.Errorf("can not get kubernetes config: %v", err)
 	}
 
-	ic, err := versionedclient.NewForConfig(config)
+	ic, err := versionedclient.NewForConfig(conf)
 	if err != nil {
 		return fmt.Errorf("failed to create istio client: %v", err)
 	}
@@ -165,38 +173,44 @@ func (s *Controller) pushConsulService2APIServer() error {
 		LabelSelector: "manager=" + aerakiFieldManager + ", registry=consul",
 	})
 
+	// 处理集群中已经存在的 Service
 	for _, oldServiceEntry := range existingServiceEntries.Items {
 		if newServiceEntry, ok := newServiceEntries[oldServiceEntry.Spec.Hosts[0]]; !ok {
 			log.Infof("Deleting EnvoyFilter: %s", oldServiceEntry.Name)
-			err = ic.NetworkingV1alpha3().ServiceEntries(configRootNS).Delete(context.TODO(), oldServiceEntry.Spec.Hosts[0],
-				v1.DeleteOptions{})
-			if err != nil {
+			if err = ic.NetworkingV1alpha3().ServiceEntries(configRootNS).Delete(context.TODO(), oldServiceEntry.Spec.Hosts[0],
+				v1.DeleteOptions{}); err != nil {
 				err = fmt.Errorf("failed to create istio client: %v", err)
 			}
 		} else {
 			if !proto.Equal(newServiceEntry, &oldServiceEntry.Spec) {
 				log.Infof("Updating ServiceEntry: %v", *newServiceEntry)
-				_, err = ic.NetworkingV1alpha3().ServiceEntries(configRootNS).Update(context.TODO(),
+				if _, err = ic.NetworkingV1alpha3().ServiceEntries(configRootNS).Update(context.TODO(),
 					toServiceEntryCRD(newServiceEntry, &oldServiceEntry),
-					v1.UpdateOptions{FieldManager: aerakiFieldManager})
-				if err != nil {
+					v1.UpdateOptions{FieldManager: aerakiFieldManager}); err != nil {
 					err = fmt.Errorf("failed to update ServiceEntry: %v", err)
 				}
-			} else {
-				log.Infof("ServiceEntry: %s unchanged", oldServiceEntry.Name)
 			}
+
 			delete(newServiceEntries, newServiceEntry.Hosts[0])
 		}
 	}
 
+	// 处理需要被新建的 Service
+	errMsgs := make([]string, 0)
 	for _, newServiceEntry := range newServiceEntries {
 		_, err = ic.NetworkingV1alpha3().ServiceEntries(configRootNS).Create(context.TODO(), toServiceEntryCRD(newServiceEntry, nil),
 			v1.CreateOptions{FieldManager: aerakiFieldManager})
-		log.Infof("Creating ServiceEntry: %v", *newServiceEntry)
 		if err != nil {
-			err = fmt.Errorf("failed to create ServiceEntry: %v", err)
+			errMsgs = append(errMsgs, err.Error())
+		} else {
+			log.Infof("Creating ServiceEntry: %v", *newServiceEntry)
 		}
 	}
+
+	if len(errMsgs) > 0 {
+		err = fmt.Errorf("failed to create (%d) ServiceEntries", len(errMsgs))
+	}
+
 	return err
 }
 
@@ -212,8 +226,10 @@ func toServiceEntryCRD(new *istio.ServiceEntry, old *v1alpha3.ServiceEntry) *v1a
 		},
 		Spec: *new,
 	}
+
 	if old != nil {
 		serviceEntry.ResourceVersion = old.ResourceVersion
 	}
+
 	return serviceEntry
 }
