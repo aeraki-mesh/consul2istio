@@ -36,4 +36,7 @@ test:
 clean:
 	rm -rf $(OUT)
 
+consul:
+	helm install -n consul -f k8s/config.yaml consul hashicorp/consul
+
 .PHONY: build docker-build docker-push clean
