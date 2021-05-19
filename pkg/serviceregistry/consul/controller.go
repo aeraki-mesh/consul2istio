@@ -38,14 +38,16 @@ func NewController(addr string) (*Controller, error) {
 
 	client, err := api.NewClient(conf)
 	monitor := NewConsulMonitor(client)
+
 	controller := Controller{
 		monitor:      monitor,
 		client:       client,
 		servicesList: make([]*istio.ServiceEntry, 0),
 	}
 
-	//Watch the change events to refresh local caches
+	// Watch the change events to refresh local caches
 	monitor.AppendServiceChangeHandler(controller.ServiceChanged)
+
 	return &controller, err
 }
 
@@ -54,20 +56,19 @@ func (c *Controller) Run(stop <-chan struct{}) {
 	c.monitor.Start(stop)
 }
 
-// Services list declarations of all services in the system
+// ServiceEntries list declarations of all services in the system
 func (c *Controller) ServiceEntries() ([]*istio.ServiceEntry, error) {
 	c.cacheMutex.Lock()
 	defer c.cacheMutex.Unlock()
 
-	err := c.initCache()
-	if err != nil {
+	if err := c.initCache(); err != nil {
 		return nil, err
 	}
 
 	return c.servicesList, nil
 }
 
-// AppendServiceHandler implements a service catalog operation
+// AppendServiceChangeHandler implements a service catalog operation
 func (c *Controller) AppendServiceChangeHandler(serviceChanged func()) {
 	c.monitor.AppendServiceChangeHandler(func() error {
 		serviceChanged()
@@ -80,14 +81,16 @@ func (c *Controller) initCache() error {
 		return nil
 	}
 
-	// get all services from consul
+	// Get all services from consul
 	consulServices, err := c.getServices()
 	if err != nil {
 		return err
 	}
 
+	c.servicesList = make([]*istio.ServiceEntry, 0)
+
 	for serviceName := range consulServices {
-		// get endpoints of a service from consul
+		// Get endpoints of a service from consul
 		endpoints, err := c.getCatalogService(serviceName, nil)
 		if err != nil {
 			return nil
@@ -96,6 +99,7 @@ func (c *Controller) initCache() error {
 	}
 
 	c.initDone = true
+
 	return nil
 }
 
@@ -105,6 +109,7 @@ func (c *Controller) getServices() (map[string][]string, error) {
 		log.Warnf("Could not retrieve services from consul: %v", err)
 		return nil, err
 	}
+
 	return data, nil
 }
 
@@ -114,12 +119,14 @@ func (c *Controller) getCatalogService(name string, q *api.QueryOptions) ([]*api
 		log.Warnf("Could not retrieve service catalog from consul: %v", err)
 		return nil, err
 	}
+
 	return endpoints, nil
 }
 
 func (c *Controller) ServiceChanged() error {
 	c.cacheMutex.Lock()
 	defer c.cacheMutex.Unlock()
+
 	c.initDone = false
 	return nil
 }

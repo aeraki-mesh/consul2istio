@@ -16,7 +16,7 @@ package serviceregistry
 
 import istio "istio.io/api/networking/v1alpha3"
 
-// Controller defines an event controller loop.  Proxy agent registers itself
+// Controller defines an event controller loop. Proxy agent registers itself
 // with the controller loop and receives notifications on changes to the
 // service topology or changes to the configuration artifacts.
 //
@@ -31,7 +31,7 @@ import istio "istio.io/api/networking/v1alpha3"
 // Handlers receive the notification event and the associated object.  Note
 // that all handlers must be appended before starting the controller.
 type Controller interface {
-	// AppendServiceHandler notifies about changes to the service catalog.
+	// AppendServiceChangeHandler notifies about changes to the service catalog.
 	AppendServiceChangeHandler(serviceChanged func())
 
 	// Run until a signal is received

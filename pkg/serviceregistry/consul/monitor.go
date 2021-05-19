@@ -37,7 +37,7 @@ type consulMonitor struct {
 	ServiceChangeHandlers []ServiceChangeHandler
 }
 
-const blockQueryWaitTime time.Duration = 10 * time.Minute
+const blockQueryWaitTime = 10 * time.Minute
 
 // NewConsulMonitor watches for changes in Consul services and CatalogServices
 func NewConsulMonitor(client *api.Client) Monitor {
@@ -58,6 +58,7 @@ func (m *consulMonitor) watchConsul(stop <-chan struct{}) {
 		select {
 		case <-stop:
 			return
+
 		default:
 			queryOptions := api.QueryOptions{
 				WaitIndex: consulWaitIndex,
@@ -65,8 +66,7 @@ func (m *consulMonitor) watchConsul(stop <-chan struct{}) {
 			}
 			// This Consul REST API will block until service changes or timeout
 			// https://www.consul.io/api/features/blocking
-			_, queryMeta, err := m.discovery.Catalog().Services(&queryOptions)
-			if err != nil {
+			if _, queryMeta, err := m.discovery.Catalog().Services(&queryOptions); err != nil {
 				log.Warnf("Could not fetch services: %v", err)
 				time.Sleep(time.Second)
 			} else if consulWaitIndex != queryMeta.LastIndex {

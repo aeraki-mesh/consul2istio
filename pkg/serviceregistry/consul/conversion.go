@@ -41,7 +41,6 @@ func convertServiceEntry(service string, endpoints []*api.CatalogService) *istio
 
 	for _, endpoint := range endpoints {
 		name = endpoint.ServiceName
-
 		port := convertPort(endpoint.ServicePort, endpoint.ServiceMeta[protocolTagName])
 
 		if svcPort, exists := ports[port.Number]; exists && svcPort.Protocol != port.Protocol {
@@ -51,8 +50,7 @@ func convertServiceEntry(service string, endpoints []*api.CatalogService) *istio
 			ports[port.Number] = port
 		}
 
-		// TODO This will not work if service is a mix of external and local services
-		// or if a service has more than one external name
+		// TODO：This will not work if service is a mix of external and local services or if a service has more than one external name
 		if endpoint.ServiceMeta[externalTagName] != "" {
 			location = istio.ServiceEntry_MESH_EXTERNAL
 			resolution = istio.ServiceEntry_NONE
@@ -74,15 +72,28 @@ func convertServiceEntry(service string, endpoints []*api.CatalogService) *istio
 		Resolution: resolution,
 		Endpoints:  workloadEntries,
 	}
+
 	return out
 }
 
 func convertWorkloadEntry(endpoint *api.CatalogService) *istio.WorkloadEntry {
 	svcLabels := convertLabels(endpoint.ServiceTags)
+
 	addr := endpoint.ServiceAddress
 	if addr == "" {
 		addr = endpoint.Address
 	}
+
+	// 如果是 DNS 需要解析出域名
+	//if net.ParseIP(addr) == nil {
+	//	ip, err := net.LookupIP(addr)
+	//	if err != nil {
+	//		log.Errorf("Lookup IP error: %v", err)
+	//	} else {
+	//		addr = ip[0].String()
+	//	}
+	//}
+
 	port := convertPort(endpoint.ServicePort, endpoint.ServiceMeta[protocolTagName])
 
 	return &istio.WorkloadEntry{
@@ -95,15 +106,17 @@ func convertWorkloadEntry(endpoint *api.CatalogService) *istio.WorkloadEntry {
 
 func convertLabels(labelsStr []string) labels.Instance {
 	out := make(labels.Instance, len(labelsStr))
+
 	for _, tag := range labelsStr {
-		vals := strings.Split(tag, "|")
+		values := strings.Split(tag, "|")
 		// Labels not of form "key|value" are ignored to avoid possible collisions
-		if len(vals) > 1 {
-			out[vals[0]] = vals[1]
+		if len(values) > 1 {
+			out[values[0]] = values[1]
 		} else {
 			log.Debugf("Tag %v ignored since it is not of form key|value", tag)
 		}
 	}
+
 	return out
 }
 
@@ -122,6 +135,14 @@ func convertPort(port int, name string) *istio.Port {
 
 // serviceHostname produces FQDN for a consul service
 func serviceHostname(name string) string {
+	// a DNS-1123 subdomain must consist of lower case alphanumeric characters,
+	// '-' or '.', and must start and end with an alphanumeric character.
+
+	//name = strings.ToLower(name)
+	//if strings.Contains(name, "_") {
+	//	name = strings.ReplaceAll(name, "_", "-")
+	//}
+
 	// TODO include datacenter in Hostname?
 	// consul DNS uses "redis.service.us-east-1.consul" -> "[<optional_tag>].<svc>.service.[<optional_datacenter>].consul"
 	return fmt.Sprintf("%s.service.consul", name)
