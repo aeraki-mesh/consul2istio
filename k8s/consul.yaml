@@ -3,6 +3,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: consul
+  namespace: consul
   labels:
     app: consul
 spec:
@@ -17,7 +18,7 @@ spec:
     spec:
       containers:
         - name: consul
-          image: consul:1.8.4
+          image: hashicorp/consul:1.9.4
           ports:
             - containerPort: 8500
 ---
