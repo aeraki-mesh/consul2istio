@@ -138,6 +138,7 @@ func (s *Server) mainLoop(stop <-chan struct{}) {
 						//Retry if failed
 						//s.pushChannel <- &ChangeEvent{}
 					}
+
 					log.Infof("Synchronize Consul services to Istio finished, watching for changes...")
 					debouncedEvents = 0
 				}
@@ -173,7 +174,7 @@ func (s *Server) pushConsulService2APIServer() error {
 		LabelSelector: "manager=" + aerakiFieldManager + ", registry=consul",
 	})
 
-	// 处理集群中已经存在的 Service
+	// Handle the existed Service
 	for _, oldServiceEntry := range existingServiceEntries.Items {
 		if newServiceEntry, ok := newServiceEntries[oldServiceEntry.Spec.Hosts[0]]; !ok {
 			log.Infof("Deleting EnvoyFilter: %s", oldServiceEntry.Name)
@@ -195,12 +196,14 @@ func (s *Server) pushConsulService2APIServer() error {
 		}
 	}
 
-	// 处理需要被新建的 Service
+	// Handle the new Service
 	errMsgs := make([]string, 0)
 	for _, newServiceEntry := range newServiceEntries {
+		fmt.Printf("%#v\n", *newServiceEntry)
 		_, err = ic.NetworkingV1alpha3().ServiceEntries(configRootNS).Create(context.TODO(), toServiceEntryCRD(newServiceEntry, nil),
 			v1.CreateOptions{FieldManager: aerakiFieldManager})
 		if err != nil {
+			log.Errorf("Creating ServiceEntry %v error: %v", *newServiceEntry, err)
 			errMsgs = append(errMsgs, err.Error())
 		} else {
 			log.Infof("Creating ServiceEntry: %v", *newServiceEntry)
