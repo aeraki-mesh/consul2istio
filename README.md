@@ -7,3 +7,5 @@ Consul2istio watches Consul catalog and synchronize all the Consul services to I
 Consul2istio will create a ServiceEntry resource for each service in the Consul catalog.
 
 ![ consul2istio ](doc/consul2istio.png)
+
+![ consul2istio arch](doc/consul2istio-arch.jpg)
