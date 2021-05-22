@@ -15,7 +15,9 @@
 package consul
 
 import (
+	"encoding/json"
 	"fmt"
+	"net"
 	"strings"
 
 	"github.com/hashicorp/consul/api"
@@ -30,24 +32,43 @@ import (
 const (
 	protocolTagName = "protocol"
 	externalTagName = "external"
+
+	migrateHostName = "hostname"
+	migrateTags     = "tags"
+	migrateAppId    = "appid"
 )
 
+type MigrateTag struct {
+	Hostname string `json:"hostname"`
+	Backlog  int    `json:"backlog"`
+	Stats    struct {
+		T string `json:"t"`
+		Y int    `json:"y"`
+		N int    `json:"n"`
+	} `json:"stats"`
+	AppId  string `json:"appid"`
+	Weight int    `json:"weight"`
+	Tags   string `json:"tags"`
+}
+
 func convertServiceEntry(service string, endpoints []*api.CatalogService) *istio.ServiceEntry {
-	name := ""
 	location := istio.ServiceEntry_MESH_INTERNAL
 	resolution := istio.ServiceEntry_STATIC
-	ports := make(map[uint32]*istio.Port)
+	ports := make([]*istio.Port, 0)
 	workloadEntries := make([]*istio.WorkloadEntry, 0)
 
 	for _, endpoint := range endpoints {
-		name = endpoint.ServiceName
 		port := convertPort(endpoint.ServicePort, endpoint.ServiceMeta[protocolTagName])
 
-		if svcPort, exists := ports[port.Number]; exists && svcPort.Protocol != port.Protocol {
-			log.Warnf("Service %v has two instances on same port %v but different protocols (%v, %v)",
-				name, port.Number, svcPort.Protocol, port.Protocol)
-		} else {
-			ports[port.Number] = port
+		//if svcPort, exists := ports[port.Number]; exists && svcPort.Protocol != port.Protocol {
+		//	log.Warnf("Service %v has two instances on same port %v but different protocols (%v, %v)",
+		//		endpoint.ServiceName, port.Number, svcPort.Protocol, port.Protocol)
+		//} else {
+		//	ports[port.Number] = port
+		//}
+
+		if len(ports) == 0 {
+			ports = append(ports, port)
 		}
 
 		// TODO：This will not work if service is a mix of external and local services or if a service has more than one external name
@@ -59,15 +80,14 @@ func convertServiceEntry(service string, endpoints []*api.CatalogService) *istio
 		workloadEntries = append(workloadEntries, convertWorkloadEntry(endpoint))
 	}
 
-	svcPorts := make([]*istio.Port, 0, len(ports))
-	for _, port := range ports {
-		svcPorts = append(svcPorts, port)
-	}
+	//svcPorts := make([]*istio.Port, 0, len(ports))
+	//for _, port := range ports {
+	//	svcPorts = append(svcPorts, port)
+	//}
 
-	hostname := serviceHostname(service)
 	out := &istio.ServiceEntry{
-		Hosts:      []string{hostname},
-		Ports:      svcPorts,
+		Hosts:      []string{serviceHostname(service)},
+		Ports:      ports,
 		Location:   location,
 		Resolution: resolution,
 		Endpoints:  workloadEntries,
@@ -77,22 +97,13 @@ func convertServiceEntry(service string, endpoints []*api.CatalogService) *istio
 }
 
 func convertWorkloadEntry(endpoint *api.CatalogService) *istio.WorkloadEntry {
-	svcLabels := convertLabels(endpoint.ServiceTags)
+	svcLabels, weight := convertLabels(endpoint.ServiceTags)
 
+	// If on service address exists or it is not a ip address, use the node address
 	addr := endpoint.ServiceAddress
-	if addr == "" {
+	if net.ParseIP(addr) == nil {
 		addr = endpoint.Address
 	}
-
-	// 如果是 DNS 需要解析出域名
-	//if net.ParseIP(addr) == nil {
-	//	ip, err := net.LookupIP(addr)
-	//	if err != nil {
-	//		log.Errorf("Lookup IP error: %v", err)
-	//	} else {
-	//		addr = ip[0].String()
-	//	}
-	//}
 
 	port := convertPort(endpoint.ServicePort, endpoint.ServiceMeta[protocolTagName])
 
@@ -101,26 +112,43 @@ func convertWorkloadEntry(endpoint *api.CatalogService) *istio.WorkloadEntry {
 		Ports:    map[string]uint32{port.Name: port.Number},
 		Labels:   svcLabels,
 		Locality: endpoint.Datacenter,
+		Weight:   weight,
 	}
 }
 
-func convertLabels(labelsStr []string) labels.Instance {
+func convertLabels(labelsStr []string) (labels.Instance, uint32) {
 	out := make(labels.Instance, len(labelsStr))
+	weight := uint32(0)
 
 	for _, tag := range labelsStr {
-		values := strings.Split(tag, "|")
 		// Labels not of form "key|value" are ignored to avoid possible collisions
-		if len(values) > 1 {
-			out[values[0]] = values[1]
-		} else {
-			log.Debugf("Tag %v ignored since it is not of form key|value", tag)
+		if strings.Contains(tag, "|") {
+			values := strings.Split(tag, "|")
+			if len(values) > 1 {
+				out[values[0]] = values[1]
+			}
+			continue
+		}
+
+		// Labels start with '{' maybe migrateTags
+		if strings.Contains(tag, "{") {
+			migrateTag := new(MigrateTag)
+			if err := json.Unmarshal([]byte(tag), migrateTag); err != nil {
+				log.Debugf("Tag %v ignored since it is not the migrateTag", tag)
+				continue
+			}
+			out[migrateHostName] = migrateTag.Hostname
+			out[migrateAppId] = migrateTag.AppId
+			out[migrateTags] = migrateTag.Tags
+			weight = uint32(migrateTag.Weight)
 		}
 	}
 
-	return out
+	return out, weight
 }
 
 func convertPort(port int, name string) *istio.Port {
+	// Default is TCP protocol
 	if name == "" {
 		name = "tcp"
 	}
@@ -135,15 +163,13 @@ func convertPort(port int, name string) *istio.Port {
 
 // serviceHostname produces FQDN for a consul service
 func serviceHostname(name string) string {
-	// a DNS-1123 subdomain must consist of lower case alphanumeric characters,
-	// '-' or '.', and must start and end with an alphanumeric character.
 
-	//name = strings.ToLower(name)
-	//if strings.Contains(name, "_") {
-	//	name = strings.ReplaceAll(name, "_", "-")
-	//}
+	// For DNS-1123 only contains '-', '.' and low case letter
+	name = strings.ReplaceAll(name, "_", "-")
+	name = strings.ReplaceAll(name, ":", "-")
+	name = strings.ToLower(name)
 
-	// TODO include datacenter in Hostname?
+	// TODO: include datacenter in Hostname?
 	// consul DNS uses "redis.service.us-east-1.consul" -> "[<optional_tag>].<svc>.service.[<optional_datacenter>].consul"
 	return fmt.Sprintf("%s.service.consul", name)
 }
