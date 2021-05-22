@@ -20,6 +20,9 @@ import (
 	"syscall"
 
 	"github.com/aeraki-framework/consul2istio/pkg"
+
+	_ "time/tzdata"
+
 	"istio.io/pkg/log"
 )
 
