@@ -61,12 +61,12 @@ func TestConvertProtocol(t *testing.T) {
 }
 
 func TestConvertLabels(t *testing.T) {
-	out := convertLabels(goodLabels)
+	out, _ := convertLabels(goodLabels)
 	if len(out) != len(goodLabels) {
 		t.Errorf("convertLabels(%q) => length %v, want %v", goodLabels, len(out), len(goodLabels))
 	}
 
-	out = convertLabels(badLabels)
+	out, _ = convertLabels(badLabels)
 	if len(out) == len(badLabels) {
 		t.Errorf("convertLabels(%q) => length %v, want %v", badLabels, len(out), len(badLabels)-1)
 	}
