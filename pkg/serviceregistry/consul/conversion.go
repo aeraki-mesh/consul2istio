@@ -38,6 +38,8 @@ const (
 	migrateAppId    = "appid"
 )
 
+var ServiceZone string
+
 type MigrateTag struct {
 	Hostname string `json:"hostname"`
 	Backlog  int    `json:"backlog"`
@@ -111,7 +113,7 @@ func convertWorkloadEntry(endpoint *api.CatalogService) *istio.WorkloadEntry {
 		Address:  addr,
 		Ports:    map[string]uint32{port.Name: port.Number},
 		Labels:   svcLabels,
-		Locality: endpoint.Datacenter,
+		Locality: ServiceZone,
 		Weight:   weight,
 	}
 }

@@ -14,10 +14,13 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/aeraki-framework/consul2istio/pkg/serviceregistry/consul"
 
 	"github.com/aeraki-framework/consul2istio/pkg"
 
@@ -31,11 +34,16 @@ const (
 	defaultConsulAddress = "localhost:30395"
 )
 
-func main() {
-	consulAddress := flag.String("consulAddress", sitConsulAddress, "Consul Address")
-	flag.Parse()
+var consulAddress string
 
-	server := pkg.NewServer(*consulAddress)
+func init() {
+	if err := parseFlags(); err != nil {
+		log.Fatalf("parse flags error: %v", err)
+	}
+}
+
+func main() {
+	server := pkg.NewServer(consulAddress)
 
 	// Create the stop channel for all of the servers.
 	stopChan := make(chan struct{}, 1)
@@ -50,4 +58,16 @@ func main() {
 	<-signalChan
 
 	stopChan <- struct{}{}
+}
+
+func parseFlags() error {
+	flag.StringVar(&consulAddress, "consulAddress", sitConsulAddress, "Consul Address")
+	flag.StringVar(&consul.ServiceZone, "consulZone", "", "Consul Data Center")
+	flag.Parse()
+
+	if consul.ServiceZone == "" {
+		return errors.New("please set consul zone with --consulZone parameter")
+	}
+
+	return nil
 }
