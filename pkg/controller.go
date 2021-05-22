@@ -177,7 +177,7 @@ func (s *Server) pushConsulService2APIServer() error {
 	// Handle the existed Service
 	for _, oldServiceEntry := range existingServiceEntries.Items {
 		if newServiceEntry, ok := newServiceEntries[oldServiceEntry.Spec.Hosts[0]]; !ok {
-			log.Infof("Deleting EnvoyFilter: %s", oldServiceEntry.Name)
+			log.Infof("Deleting ServiceEntry: %s", oldServiceEntry.Name)
 			if err = ic.NetworkingV1alpha3().ServiceEntries(configRootNS).Delete(context.TODO(), oldServiceEntry.Spec.Hosts[0],
 				v1.DeleteOptions{}); err != nil {
 				err = fmt.Errorf("failed to create istio client: %v", err)
@@ -199,14 +199,13 @@ func (s *Server) pushConsulService2APIServer() error {
 	// Handle the new Service
 	errMsgs := make([]string, 0)
 	for _, newServiceEntry := range newServiceEntries {
-		fmt.Printf("%#v\n", *newServiceEntry)
 		_, err = ic.NetworkingV1alpha3().ServiceEntries(configRootNS).Create(context.TODO(), toServiceEntryCRD(newServiceEntry, nil),
 			v1.CreateOptions{FieldManager: aerakiFieldManager})
 		if err != nil {
-			log.Errorf("Creating ServiceEntry %v error: %v", *newServiceEntry, err)
+			log.Errorf("Creating ServiceEntry %v error: %v", newServiceEntry.Hosts[0], err)
 			errMsgs = append(errMsgs, err.Error())
 		} else {
-			log.Infof("Creating ServiceEntry: %v", *newServiceEntry)
+			log.Infof("Created ServiceEntry: %v", newServiceEntry.Hosts[0])
 		}
 	}
 
