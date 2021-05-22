@@ -62,7 +62,7 @@ func main() {
 
 func parseFlags() error {
 	flag.StringVar(&consulAddress, "consulAddress", sitConsulAddress, "Consul Address")
-	flag.StringVar(&consul.ServiceZone, "consulZone", "", "Consul Data Center")
+	flag.StringVar(&consul.ServiceZone, "consulZone", "", "Consul Data Center such as : contry/region/zone")
 	flag.Parse()
 
 	if consul.ServiceZone == "" {
