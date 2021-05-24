@@ -90,6 +90,7 @@ func TestConvertWorkloadEntry(t *testing.T) {
 	tagKey2 := "zone"
 	tagVal2 := "prod"
 	dc := "dc1"
+	ServiceZone = dc
 	consulServiceInst := api.CatalogService{
 		Node:        "istio-node",
 		Address:     "172.19.0.5",
@@ -111,7 +112,7 @@ func TestConvertWorkloadEntry(t *testing.T) {
 		t.Errorf("convertWorkloadEntry() => %v, want %v", out.Ports[p], protocol.UDP)
 	}
 
-	if out.Locality != dc {
+	if out.Locality != ServiceZone {
 		t.Errorf("convertWorkloadEntry() => %v, want %v", out.Locality, dc)
 	}
 
@@ -128,7 +129,7 @@ func TestConvertWorkloadEntry(t *testing.T) {
 	}
 }
 
-func TestConverServiceEntry(t *testing.T) {
+func TestConvertServiceEntry(t *testing.T) {
 	name := "productpage"
 	port := 9080
 	p := "udp"
