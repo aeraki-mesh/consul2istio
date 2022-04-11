@@ -62,7 +62,7 @@ type Controller struct {
 func NewController(consulAddress string) *Controller {
 	controller := &Controller{
 		consulAddress: consulAddress,
-		pushChannel:   make(chan *ChangeEvent),
+		pushChannel:   make(chan *ChangeEvent, 1),
 	}
 	return controller
 }
