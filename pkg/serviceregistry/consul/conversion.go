@@ -42,7 +42,8 @@ func convertServiceEntry(service string, endpoints []*api.CatalogService) *istio
 	for _, endpoint := range endpoints {
 		name = endpoint.ServiceName
 
-		port := convertPort(endpoint.ServicePort, endpoint.ServiceMeta[protocolTagName])
+		protoName := getProtoValFromServiceTagsOrMeta(endpoint.ServiceTags, endpoint.ServiceMeta[protocolTagName])
+		port := convertPort(endpoint.ServicePort, protoName)
 
 		if svcPort, exists := ports[port.Number]; exists && svcPort.Protocol != port.Protocol {
 			log.Warnf("Service %v has two instances on same port %v but different protocols (%v, %v)",
@@ -83,7 +84,9 @@ func convertWorkloadEntry(endpoint *api.CatalogService) *istio.WorkloadEntry {
 	if addr == "" {
 		addr = endpoint.Address
 	}
-	port := convertPort(endpoint.ServicePort, endpoint.ServiceMeta[protocolTagName])
+
+	protoName := getProtoValFromServiceTagsOrMeta(endpoint.ServiceTags, endpoint.ServiceMeta[protocolTagName])
+	port := convertPort(endpoint.ServicePort, protoName)
 
 	return &istio.WorkloadEntry{
 		Address:  addr,
@@ -134,4 +137,28 @@ func convertProtocol(name string) string {
 		return string(protocol.TCP)
 	}
 	return string(p)
+}
+
+//get the protocol value:get from meta first, otherwise get from tags
+func getProtoValFromServiceTagsOrMeta(serviceTags []string, serviceMetaProtocol string) string {
+	if len(serviceMetaProtocol) > 0 {
+		log.Debugf("getProtoValFromServiceTagsOrMeta,serviceMetaProtocol:%v", serviceMetaProtocol)
+		return serviceMetaProtocol
+	}
+	defaultProto := "http"
+	if len(serviceTags) == 0 {
+		return defaultProto
+	}
+	for _, v := range serviceTags {
+		isExist := strings.Contains(v, "proto")
+		if isExist {
+			strs := strings.Split(v, "=")
+			if len(strs) == 2 {
+				return strs[1]
+			} else {
+				log.Warnf("service tags proto is invalid")
+			}
+		}
+	}
+	return defaultProto
 }

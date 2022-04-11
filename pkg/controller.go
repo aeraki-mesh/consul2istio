@@ -129,7 +129,7 @@ func (s *Controller) mainLoop(stop <-chan struct{}) {
 					if err != nil {
 						log.Errorf("Failed to synchronize consul services to Istio: %v", err)
 						// Retry if failed
-						s.pushChannel <- &ChangeEvent{}
+						// s.pushChannel <- &ChangeEvent{}
 					}
 					debouncedEvents = 0
 				}

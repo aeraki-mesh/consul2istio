@@ -85,7 +85,7 @@ func (c *Controller) initCache() error {
 	if err != nil {
 		return err
 	}
-
+	c.servicesList = nil
 	for serviceName := range consulServices {
 		// get endpoints of a service from consul
 		endpoints, err := c.getCatalogService(serviceName, nil)

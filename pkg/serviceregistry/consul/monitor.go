@@ -37,7 +37,10 @@ type consulMonitor struct {
 	ServiceChangeHandlers []ServiceChangeHandler
 }
 
-const blockQueryWaitTime time.Duration = 10 * time.Minute
+const (
+	blockQueryWaitTime          time.Duration = 10 * time.Minute
+	updateServiceRecordWaitTime time.Duration = 10 * time.Second
+)
 
 // NewConsulMonitor watches for changes in Consul services and CatalogServices
 func NewConsulMonitor(client *api.Client) Monitor {
@@ -72,6 +75,7 @@ func (m *consulMonitor) watchConsul(stop <-chan struct{}) {
 			} else if consulWaitIndex != queryMeta.LastIndex {
 				consulWaitIndex = queryMeta.LastIndex
 				m.updateServiceRecord()
+				time.Sleep(updateServiceRecordWaitTime)
 			}
 		}
 	}
