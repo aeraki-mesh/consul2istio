@@ -16,23 +16,23 @@ package consul
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/hashicorp/consul/api"
-
-	"istio.io/pkg/log"
-
 	istio "istio.io/api/networking/v1alpha3"
 	"istio.io/istio/pkg/config/labels"
 	"istio.io/istio/pkg/config/protocol"
+	"istio.io/pkg/log"
 )
 
 const (
-	protocolTagName = "protocol"
-	externalTagName = "external"
+	protocolTagName    = "protocol"
+	externalTagName    = "external"
+	defaultServicePort = 80
 )
 
-func convertServiceEntry(service string, endpoints []*api.CatalogService) *istio.ServiceEntry {
+func convertServiceEntry(enableDefaultPort bool, fqdn, service string, endpoints []*api.CatalogService) *istio.ServiceEntry {
 	name := ""
 	location := istio.ServiceEntry_MESH_INTERNAL
 	resolution := istio.ServiceEntry_STATIC
@@ -45,10 +45,13 @@ func convertServiceEntry(service string, endpoints []*api.CatalogService) *istio
 		port := convertPort(endpoint.ServicePort, endpoint.ServiceMeta[protocolTagName])
 
 		if svcPort, exists := ports[port.Number]; exists && svcPort.Protocol != port.Protocol {
-			log.Warnf("Service %v has two instances on same port %v but different protocols (%v, %v)",
+			log.Infof("Service %v has two instances on same port %v but different protocols (%v, %v)",
 				name, port.Number, svcPort.Protocol, port.Protocol)
 		} else {
 			ports[port.Number] = port
+		}
+		if enableDefaultPort {
+			ports[defaultServicePort] = convertPort(defaultServicePort, "")
 		}
 
 		// TODO This will not work if service is a mix of external and local services
@@ -58,7 +61,7 @@ func convertServiceEntry(service string, endpoints []*api.CatalogService) *istio
 			resolution = istio.ServiceEntry_NONE
 		}
 
-		workloadEntries = append(workloadEntries, convertWorkloadEntry(endpoint))
+		workloadEntries = append(workloadEntries, convertWorkloadEntry(enableDefaultPort, endpoint))
 	}
 
 	svcPorts := make([]*istio.Port, 0, len(ports))
@@ -66,7 +69,7 @@ func convertServiceEntry(service string, endpoints []*api.CatalogService) *istio
 		svcPorts = append(svcPorts, port)
 	}
 
-	hostname := serviceHostname(service)
+	hostname := serviceHostname(service, fqdn)
 	out := &istio.ServiceEntry{
 		Hosts:      []string{hostname},
 		Ports:      svcPorts,
@@ -77,17 +80,25 @@ func convertServiceEntry(service string, endpoints []*api.CatalogService) *istio
 	return out
 }
 
-func convertWorkloadEntry(endpoint *api.CatalogService) *istio.WorkloadEntry {
+func convertWorkloadEntry(enableDefaultPort bool, endpoint *api.CatalogService) *istio.WorkloadEntry {
 	svcLabels := convertLabels(endpoint.ServiceTags)
 	addr := endpoint.ServiceAddress
 	if addr == "" {
 		addr = endpoint.Address
 	}
+	ports := make(map[string]uint32, 0)
+
 	port := convertPort(endpoint.ServicePort, endpoint.ServiceMeta[protocolTagName])
+	ports[port.Name] = port.Number
+
+	if enableDefaultPort {
+		defaultPort := convertPort(defaultServicePort, "")
+		ports[defaultPort.Name] = port.Number
+	}
 
 	return &istio.WorkloadEntry{
 		Address:  addr,
-		Ports:    map[string]uint32{port.Name: port.Number},
+		Ports:    ports,
 		Labels:   svcLabels,
 		Locality: endpoint.Datacenter,
 	}
@@ -112,25 +123,30 @@ func convertPort(port int, name string) *istio.Port {
 		name = "tcp"
 	}
 
+	sport := strconv.Itoa(port)
+	protocol := convertProtocol(name)
 	return &istio.Port{
 		Number:     uint32(port),
-		Protocol:   convertProtocol(name),
-		Name:       name,
+		Protocol:   protocol,
+		Name:       name + "-" + sport,
 		TargetPort: uint32(port),
 	}
 }
 
 // serviceHostname produces FQDN for a consul service
-func serviceHostname(name string) string {
+func serviceHostname(name, fqdn string) string {
 	// TODO include datacenter in Hostname?
 	// consul DNS uses "redis.service.us-east-1.consul" -> "[<optional_tag>].<svc>.service.[<optional_datacenter>].consul"
-	return fmt.Sprintf("%s.service.consul", name)
+	if len(fqdn) > 0 {
+		return fmt.Sprintf("%s.%s", name, fqdn)
+	}
+	return name
 }
 
 func convertProtocol(name string) string {
 	p := protocol.Parse(name)
 	if p == protocol.Unsupported {
-		log.Warnf("unsupported protocol value: %s", name)
+		log.Infof("unsupported protocol value: %s", name)
 		return string(protocol.TCP)
 	}
 	return string(p)

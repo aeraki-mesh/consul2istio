@@ -1,4 +1,3 @@
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -12,12 +11,14 @@ spec:
   replicas: 1
   template:
     metadata:
+      annotations:
+        sidecar.istio.io/inject: "false"
       labels:
         app: consul
     spec:
       containers:
         - name: consul
-          image: consul:1.8.4
+          image: consul:1.9.17
           ports:
             - containerPort: 8500
 ---

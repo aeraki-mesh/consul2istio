@@ -31,18 +31,20 @@ import istio "istio.io/api/networking/v1alpha3"
 // Handlers receive the notification event and the associated object.  Note
 // that all handlers must be appended before starting the controller.
 type Controller interface {
-	// AppendServiceHandler notifies about changes to the service catalog.
+	// AppendServiceChangeHandler notifies about changes to the service catalog.
 	AppendServiceChangeHandler(serviceChanged func())
 
 	// Run until a signal is received
 	Run(stop <-chan struct{})
 }
 
+// ServiceDiscovery provides interface for all service discovery mechanisms.
 type ServiceDiscovery interface {
 	// ServiceEntries list declarations of all services in this registry
 	ServiceEntries() ([]*istio.ServiceEntry, error)
 }
 
+// Registry provides interface for service registry operations.
 type Registry interface {
 	Controller
 	ServiceDiscovery

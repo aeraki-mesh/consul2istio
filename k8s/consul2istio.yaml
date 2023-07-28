@@ -12,13 +12,19 @@ spec:
   replicas: 1
   template:
     metadata:
+      annotations:
+        sidecar.istio.io/inject: "false"
       labels:
         app: consul2istio
     spec:
       serviceAccountName: consul2istio
       containers:
         - name: consul2istio
-          image: aeraki/consul2istio
+          image: ghcr.io/aeraki-mesh/consul2istio:latest
+          args:
+            - /usr/local/bin/consul2istio
+            - --enableDefaultPort=true
+          imagePullPolicy: Always
           env:
             - name: consulAddress
               value: "consul:8500"
@@ -61,4 +67,4 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: consul2istio
-    namespace: istio-system
+    namespace: default

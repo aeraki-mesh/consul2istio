@@ -23,9 +23,8 @@ import (
 	"sync"
 	"testing"
 
-	istio "istio.io/api/networking/v1alpha3"
-
 	"github.com/hashicorp/consul/api"
+	istio "istio.io/api/networking/v1alpha3"
 )
 
 type mockServer struct {
@@ -151,7 +150,7 @@ func newServer() *mockServer {
 func TestServiceEntries(t *testing.T) {
 	ts := newServer()
 	defer ts.server.Close()
-	controller, err := NewController(ts.server.URL)
+	controller, err := NewController(ts.server.URL, "", false)
 	if err != nil {
 		t.Errorf("could not create Consul Controller: %v", err)
 	}
@@ -165,7 +164,9 @@ func TestServiceEntries(t *testing.T) {
 		t.Errorf("ServiceEntries() returned wrong number of service entry => %v, want 3", len(serviceEntries))
 	}
 
-	hostnames := []string{serviceHostname("productpage"), serviceHostname("reviews"), serviceHostname("rating")}
+	hostnames := []string{serviceHostname("productpage", ""),
+		serviceHostname("reviews", ""),
+		serviceHostname("rating", "")}
 	services := map[string]*istio.ServiceEntry{}
 	for _, serviceEntry := range serviceEntries {
 		if len(serviceEntry.Hosts) == 1 {
@@ -179,7 +180,7 @@ func TestServiceEntries(t *testing.T) {
 		}
 	}
 
-	if len(services[serviceHostname("reviews")].Endpoints) != 3 {
+	if len(services[serviceHostname("reviews", "")].Endpoints) != 3 {
 		t.Errorf("ServiceEntries() get %v endpoints f, want 3", len(serviceEntries))
 	}
 }

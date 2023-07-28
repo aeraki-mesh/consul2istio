@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: provider-demo-v1
+  labels:
+    app: provider-demo
+spec:
+  selector:
+    matchLabels:
+      app: provider-demo
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: provider-demo
+        version: v1
+    spec:
+      containers:
+        - name: provider-demo
+          image: docker.io/tanjunchen/provider-demo:jd
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 10001
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: provider-demo-v2
+  labels:
+    app: provider-demo
+spec:
+  selector:
+    matchLabels:
+      app: provider-demo
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: provider-demo
+        version: v2
+    spec:
+      containers:
+        - name: provider-demo-v2
+          image: docker.io/tanjunchen/provider-demo:jd
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 10001
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: consumer-demo
+  labels:
+    app: consumer-demo
+spec:
+  selector:
+    matchLabels:
+      app: consumer-demo
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: consumer-demo
+    spec:
+      containers:
+        - name: consumer-demo
+          image: docker.io/tanjunchen/consumer-demo:jd
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 9999

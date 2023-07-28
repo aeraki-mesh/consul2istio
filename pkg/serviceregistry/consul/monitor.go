@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/hashicorp/consul/api"
-
 	"istio.io/pkg/log"
 )
 

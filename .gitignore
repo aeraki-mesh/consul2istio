@@ -1,2 +1,6 @@
-.idea/
-out/
+**/.DS_Store
+debug
+out
+.idea
+tmp
+.vscode
