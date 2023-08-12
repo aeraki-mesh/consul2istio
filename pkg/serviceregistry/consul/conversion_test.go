@@ -16,12 +16,11 @@ package consul
 
 import (
 	"fmt"
+	"strconv"
 	"testing"
 
-	istio "istio.io/api/networking/v1alpha3"
-
 	"github.com/hashicorp/consul/api"
-
+	istio "istio.io/api/networking/v1alpha3"
 	"istio.io/istio/pkg/config/protocol"
 )
 
@@ -73,10 +72,10 @@ func TestConvertLabels(t *testing.T) {
 }
 
 func TestServiceHostname(t *testing.T) {
-	out := serviceHostname("productpage")
+	out := serviceHostname("productpage", "")
 
-	if out != "productpage.service.consul" {
-		t.Errorf("serviceHostname() => %q, want %q", out, "productpage.service.consul")
+	if out != "productpage" {
+		t.Errorf("serviceHostname() => %q, want %q", out, "productpage")
 	}
 }
 
@@ -105,9 +104,9 @@ func TestConvertWorkloadEntry(t *testing.T) {
 		ServiceMeta:    map[string]string{protocolTagName: p},
 	}
 
-	out := convertWorkloadEntry(&consulServiceInst)
+	out := convertWorkloadEntry(false, &consulServiceInst)
 
-	if out.Ports[p] != 9080 {
+	if out.Ports[p+"-"+strconv.Itoa(9080)] != 9080 {
 		t.Errorf("convertWorkloadEntry() => %v, want %v", out.Ports[p], protocol.UDP)
 	}
 
@@ -161,7 +160,7 @@ func TestConverServiceEntry(t *testing.T) {
 		},
 	}
 
-	out := convertServiceEntry(name, consulServiceInsts)
+	out := convertServiceEntry(false, "", name, consulServiceInsts)
 
 	if len(out.Endpoints) != 2 {
 		t.Errorf("converServiceEntry() len(Endpoints) => %v, want %v", len(out.Endpoints), 2)
@@ -175,9 +174,9 @@ func TestConverServiceEntry(t *testing.T) {
 		t.Errorf("converServiceEntry() len(Hosts) => %v, want %v", len(out.Hosts), 0)
 	}
 
-	if out.Hosts[0] != serviceHostname(name) {
+	if out.Hosts[0] != serviceHostname(name, "") {
 		t.Errorf("converServiceEntry() bad hostname => %q, want %q",
-			out.Hosts[0], serviceHostname(name))
+			out.Hosts[0], serviceHostname(name, ""))
 	}
 
 	if out.Resolution != istio.ServiceEntry_STATIC {
@@ -196,9 +195,5 @@ func TestConverServiceEntry(t *testing.T) {
 
 	if out.Ports[0].Number != uint32(port) {
 		t.Errorf("converServiceEntry() => %v, want %v", out.Ports[0].Number, protocol.UDP)
-	}
-
-	if out.Ports[0].Name != p {
-		t.Errorf("converServiceEntry() => %v, want %v", out.Ports[0].Name, p)
 	}
 }

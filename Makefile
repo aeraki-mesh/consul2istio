@@ -6,26 +6,23 @@ GOTEST?=$(GOCMD) test
 GOGET?=$(GOCMD) get
 GOBIN?=$(GOPATH)/bin
 
-# Build parameters
 OUT?=./out
-DOCKER_TMP?=$(OUT)/docker_temp/
-DOCKER_TAG?=aeraki/consul2istio:latest
-BINARY_NAME?=$(OUT)/consul2istio
-BINARY_NAME_DARWIN?=$(BINARY_NAME)-darwin
-MAIN_PATH_CONSUL_MCP=./cmd/consul2istio/main.go
+IMAGE_REPO?=ghcr.io/aeraki-mesh
+IMAGE_NAME?=consul2istio
+IMAGE_TAG?=latest
+IMAGE?=$(IMAGE_REPO)/$(IMAGE_NAME):$(IMAGE_TAG)
+MAIN_PATH=./cmd/consul2istio/main.go
+IMAGE_OS?=linux
+IMAGE_ARCH?=amd64
+IMAGE_DOCKERFILE_PATH?=docker/Dockerfile
 
-build:
-	CGO_ENABLED=0 GOOS=linux  $(GOBUILD) -o $(BINARY_NAME) $(MAIN_PATH_CONSUL_MCP)
-build-mac:
-	CGO_ENABLED=0 GOOS=darwin  $(GOBUILD) -o $(BINARY_NAME_DARWIN) $(MAIN_PATH_CONSUL_MCP)
+build: test
+	CGO_ENABLED=0 GOOS=$(IMAGE_OS) GOARCH=$(IMAGE_ARCH) $(GOBUILD) -o $(OUT)/$(IMAGE_ARCH)/$(IMAGE_OS)/$(IMAGE_NAME) $(MAIN_PATH)
 docker-build: build
-	mkdir $(DOCKER_TMP)
-	cp ./docker/Dockerfile $(DOCKER_TMP)
-	cp $(BINARY_NAME) $(DOCKER_TMP)
-	docker build -t $(DOCKER_TAG) $(DOCKER_TMP)
-	rm -rf $(DOCKER_TMP)
-docker-push:
-	docker push $(DOCKER_TAG)
+	docker build --build-arg CONSUL2ISTIO_BIN_DIR=${OUT} --build-arg ARCH=${IMAGE_ARCH} --build-arg OS=${IMAGE_OS} \
+	--no-cache --platform=${IMAGE_OS}/${IMAGE_ARCH} -t ${IMAGE} -f ${IMAGE_DOCKERFILE_PATH} .
+docker-push: docker-build
+	docker push $(IMAGE)
 style-check:
 	gofmt -l -d ./
 	goimports -l -d ./

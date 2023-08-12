@@ -21,48 +21,39 @@ import (
 	"fmt"
 	"time"
 
-	"istio.io/client-go/pkg/apis/networking/v1alpha3"
-
-	"github.com/aeraki-framework/consul2istio/pkg/serviceregistry"
-	"github.com/aeraki-framework/consul2istio/pkg/serviceregistry/consul"
-	"github.com/gogo/protobuf/proto"
+	"google.golang.org/protobuf/proto"
 	istio "istio.io/api/networking/v1alpha3"
+	"istio.io/client-go/pkg/apis/networking/v1alpha3"
 	versionedclient "istio.io/client-go/pkg/clientset/versioned"
 	"istio.io/pkg/log"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
+
+	"github.com/aeraki-framework/consul2istio/pkg/constants"
+	"github.com/aeraki-framework/consul2istio/pkg/serviceregistry"
+	"github.com/aeraki-framework/consul2istio/pkg/serviceregistry/consul"
 )
 
-const (
-	// debounceAfter is the delay added to events to wait after a registry event for debouncing.
-	// This will delay the push by at least this interval, plus the time getting subsequent events.
-	// If no change is detected the push will happen, otherwise we'll keep delaying until things settle.
-	debounceAfter = 500 * time.Millisecond
+type changeEvent struct{}
 
-	// debounceMax is the maximum time to wait for events while debouncing.
-	// Defaults to 10 seconds. If events keep showing up with no break for this time, we'll trigger a push.
-	debounceMax = 10 * time.Second
-
-	// configRootNS is the root config root namespace
-	configRootNS = "istio-system"
-
-	// aerakiFieldManager is the FileldManager for Aeraki CRDs
-	aerakiFieldManager = "Aeraki"
-)
-
-type ChangeEvent struct {
-}
-
+// Controller represents Consul service registry
 type Controller struct {
-	consulAddress string
-	pushChannel   chan *ChangeEvent
-	registry      serviceregistry.Registry
+	consulAddress     string
+	namespace         string
+	fqdn              string
+	enableDefaultPort bool
+	pushChannel       chan *changeEvent
+	registry          serviceregistry.Registry
 }
 
-func NewController(consulAddress string) *Controller {
+// NewController creates Consul Controller
+func NewController(args *consul.BootStrapArgs) *Controller {
 	controller := &Controller{
-		consulAddress: consulAddress,
-		pushChannel:   make(chan *ChangeEvent),
+		consulAddress:     args.ConsulAddress,
+		fqdn:              args.FQDN,
+		namespace:         args.Namespace,
+		enableDefaultPort: args.EnableDefaultPort,
+		pushChannel:       make(chan *changeEvent),
 	}
 	return controller
 }
@@ -71,7 +62,7 @@ func NewController(consulAddress string) *Controller {
 func (s *Controller) Run(stop <-chan struct{}) error {
 	log.Infof("Watch Consul at %s", s.consulAddress)
 	if err := s.watchRegistry(stop); err != nil {
-		log.Fatala(err)
+		log.Errorf(err)
 		return err
 	}
 	go func() {
@@ -82,15 +73,15 @@ func (s *Controller) Run(stop <-chan struct{}) error {
 
 func (s *Controller) watchRegistry(stop <-chan struct{}) error {
 	var err error
-	s.registry, err = consul.NewController(s.consulAddress)
+	s.registry, err = consul.NewController(s.consulAddress, s.fqdn, s.enableDefaultPort)
 	if err != nil {
 		return err
 	}
 
 	s.registry.AppendServiceChangeHandler(func() {
-		s.pushChannel <- &ChangeEvent{}
+		s.pushChannel <- &changeEvent{}
 	})
-	//@todo gracefully close the registry controller
+	// todo gracefully close the registry controller
 	s.registry.Run(stop)
 	return nil
 }
@@ -113,14 +104,14 @@ func (s *Controller) mainLoop(stop <-chan struct{}) {
 				log.Debugf("This is the first debounced event")
 				startDebounce = lastResourceUpdateTime
 			}
-			timeChan = time.After(debounceAfter)
+			timeChan = time.After(constants.DebounceAfter)
 			debouncedEvents++
 		case <-timeChan:
 			log.Debugf("Receive event from time chanel")
 			eventDelay := time.Since(startDebounce)
 			quietTime := time.Since(lastResourceUpdateTime)
 			// it has been too long since the first debounced event or quiet enough since the last debounced event
-			if eventDelay >= debounceMax || quietTime >= debounceAfter {
+			if eventDelay >= constants.DebounceMax || quietTime >= constants.DebounceAfter {
 				if debouncedEvents > 0 {
 					pushCounter++
 					log.Infof("Push debounce stable[%d] %d: %v since last change, %v since last push",
@@ -129,12 +120,12 @@ func (s *Controller) mainLoop(stop <-chan struct{}) {
 					if err != nil {
 						log.Errorf("Failed to synchronize consul services to Istio: %v", err)
 						// Retry if failed
-						s.pushChannel <- &ChangeEvent{}
+						s.pushChannel <- &changeEvent{}
 					}
 					debouncedEvents = 0
 				}
 			} else {
-				timeChan = time.After(debounceAfter - quietTime)
+				timeChan = time.After(constants.DebounceAfter - quietTime)
 			}
 		}
 	}
@@ -161,24 +152,24 @@ func (s *Controller) pushConsulService2APIServer() error {
 		return fmt.Errorf("failed to create istio client: %v", err)
 	}
 
-	existingServiceEntries, _ := ic.NetworkingV1alpha3().ServiceEntries(configRootNS).List(context.TODO(), v1.ListOptions{
-		LabelSelector: "manager=" + aerakiFieldManager + ", registry=consul",
+	existingServiceEntries, _ := ic.NetworkingV1alpha3().ServiceEntries(s.namespace).List(context.TODO(), v1.ListOptions{
+		LabelSelector: "manager=" + constants.AerakiFieldManager + ", registry=consul",
 	})
 
 	for _, oldServiceEntry := range existingServiceEntries.Items {
 		if newServiceEntry, ok := newServiceEntries[oldServiceEntry.Spec.Hosts[0]]; !ok {
 			log.Infof("Deleting EnvoyFilter: %s", oldServiceEntry.Name)
-			err = ic.NetworkingV1alpha3().ServiceEntries(configRootNS).Delete(context.TODO(), oldServiceEntry.Spec.Hosts[0],
+			err = ic.NetworkingV1alpha3().ServiceEntries(s.namespace).Delete(context.TODO(), oldServiceEntry.Spec.Hosts[0],
 				v1.DeleteOptions{})
 			if err != nil {
 				err = fmt.Errorf("failed to create istio client: %v", err)
 			}
 		} else {
 			if !proto.Equal(newServiceEntry, &oldServiceEntry.Spec) {
-				log.Infof("Updating ServiceEntry: %v", *newServiceEntry)
-				_, err = ic.NetworkingV1alpha3().ServiceEntries(configRootNS).Update(context.TODO(),
-					toServiceEntryCRD(newServiceEntry, &oldServiceEntry),
-					v1.UpdateOptions{FieldManager: aerakiFieldManager})
+				log.Infof("Updating ServiceEntry: %v", newServiceEntry)
+				_, err = ic.NetworkingV1alpha3().ServiceEntries(s.namespace).Update(context.TODO(),
+					toServiceEntryCRD(newServiceEntry, oldServiceEntry),
+					v1.UpdateOptions{FieldManager: constants.AerakiFieldManager})
 				if err != nil {
 					err = fmt.Errorf("failed to update ServiceEntry: %v", err)
 				}
@@ -190,9 +181,10 @@ func (s *Controller) pushConsulService2APIServer() error {
 	}
 
 	for _, newServiceEntry := range newServiceEntries {
-		_, err = ic.NetworkingV1alpha3().ServiceEntries(configRootNS).Create(context.TODO(), toServiceEntryCRD(newServiceEntry, nil),
-			v1.CreateOptions{FieldManager: aerakiFieldManager})
-		log.Infof("Creating ServiceEntry: %v", *newServiceEntry)
+		_, err = ic.NetworkingV1alpha3().ServiceEntries(s.namespace).Create(context.TODO(),
+			toServiceEntryCRD(newServiceEntry, nil),
+			v1.CreateOptions{FieldManager: constants.AerakiFieldManager})
+		log.Infof("Creating ServiceEntry: %v", newServiceEntry)
 		if err != nil {
 			err = fmt.Errorf("failed to create ServiceEntry: %v", err)
 		}
@@ -201,19 +193,19 @@ func (s *Controller) pushConsulService2APIServer() error {
 }
 
 func toServiceEntryCRD(new *istio.ServiceEntry, old *v1alpha3.ServiceEntry) *v1alpha3.ServiceEntry {
-	serviceEntry := &v1alpha3.ServiceEntry{
+	serviceEntry := v1alpha3.ServiceEntry{
 		ObjectMeta: v1.ObjectMeta{
-			Name:      new.Hosts[0],
-			Namespace: configRootNS,
+			Name: new.Hosts[0],
+			//Namespace: configRootNS,
 			Labels: map[string]string{
-				"manager":  aerakiFieldManager,
-				"registry": "consul",
+				"manager":  constants.AerakiFieldManager,
+				"registry": constants.RegistryConsul,
 			},
 		},
-		Spec: *new,
+		Spec: *new.DeepCopy(),
 	}
 	if old != nil {
 		serviceEntry.ResourceVersion = old.ResourceVersion
 	}
-	return serviceEntry
+	return &serviceEntry
 }

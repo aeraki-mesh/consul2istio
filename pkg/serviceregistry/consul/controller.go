@@ -24,28 +24,32 @@ import (
 
 // Controller communicates with Consul and monitors for changes
 type Controller struct {
-	client       *api.Client
-	monitor      Monitor
-	servicesList []*istio.ServiceEntry
-	initDone     bool
-	cacheMutex   sync.Mutex
+	client            *api.Client
+	monitor           Monitor
+	servicesList      []*istio.ServiceEntry
+	initDone          bool
+	fqdn              string
+	enableDefaultPort bool
+	cacheMutex        sync.Mutex
 }
 
 // NewController creates a new Consul controller
-func NewController(addr string) (*Controller, error) {
+func NewController(addr, fqdn string, enableDefaultPort bool) (*Controller, error) {
 	conf := api.DefaultConfig()
 	conf.Address = addr
 
 	client, err := api.NewClient(conf)
 	monitor := NewConsulMonitor(client)
 	controller := Controller{
-		monitor:      monitor,
-		client:       client,
-		servicesList: make([]*istio.ServiceEntry, 0),
+		monitor:           monitor,
+		client:            client,
+		fqdn:              fqdn,
+		enableDefaultPort: enableDefaultPort,
+		servicesList:      make([]*istio.ServiceEntry, 0),
 	}
 
-	//Watch the change events to refresh local caches
-	monitor.AppendServiceChangeHandler(controller.ServiceChanged)
+	// Watch the change events to refresh local caches
+	monitor.AppendServiceChangeHandler(controller.serviceChanged)
 	return &controller, err
 }
 
@@ -54,7 +58,7 @@ func (c *Controller) Run(stop <-chan struct{}) {
 	c.monitor.Start(stop)
 }
 
-// Services list declarations of all services in the system
+// ServiceEntries Services list declarations of all services in the system
 func (c *Controller) ServiceEntries() ([]*istio.ServiceEntry, error) {
 	c.cacheMutex.Lock()
 	defer c.cacheMutex.Unlock()
@@ -67,7 +71,7 @@ func (c *Controller) ServiceEntries() ([]*istio.ServiceEntry, error) {
 	return c.servicesList, nil
 }
 
-// AppendServiceHandler implements a service catalog operation
+// AppendServiceChangeHandler implements a service catalog operation
 func (c *Controller) AppendServiceChangeHandler(serviceChanged func()) {
 	c.monitor.AppendServiceChangeHandler(func() error {
 		serviceChanged()
@@ -92,7 +96,7 @@ func (c *Controller) initCache() error {
 		if err != nil {
 			return nil
 		}
-		c.servicesList = append(c.servicesList, convertServiceEntry(serviceName, endpoints))
+		c.servicesList = append(c.servicesList, convertServiceEntry(c.enableDefaultPort, c.fqdn, serviceName, endpoints))
 	}
 
 	c.initDone = true
@@ -117,7 +121,7 @@ func (c *Controller) getCatalogService(name string, q *api.QueryOptions) ([]*api
 	return endpoints, nil
 }
 
-func (c *Controller) ServiceChanged() error {
+func (c *Controller) serviceChanged() error {
 	c.cacheMutex.Lock()
 	defer c.cacheMutex.Unlock()
 	c.initDone = false

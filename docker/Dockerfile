@@ -1,35 +1,25 @@
-FROM ubuntu:bionic
-# Base image for debug builds.
-# Built manually uploaded as "istionightly/base_debug"
+# Copyright Aeraki Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
-# Do not add more stuff to this list that isn't small or critically useful.
-# If you occasionally need something on the container do
-# sudo apt-get update && apt-get whichever
+FROM alpine:3.17
 
-# hadolint ignore=DL3005,DL3008
+ARG CONSUL2ISTIO_BIN_DIR
+ARG ARCH
+ARG OS
 
-ENV consulAddress="127.0.0.1:8500"
+RUN apk update && \
+    apk add curl
 
-RUN apt-get update && \
-  apt-get install --no-install-recommends -y \
-  ca-certificates \
-  curl \
-  iptables \
-  iproute2 \
-  iputils-ping \
-  knot-dnsutils \
-  netcat \
-  tcpdump \
-  conntrack \
-  bsdmainutils \
-  net-tools \
-  lsof \
-  linux-tools-generic \
-  sudo \
-  && update-ca-certificates \
-  && apt-get upgrade -y \
-  && apt-get clean \
-  && rm -rf  /var/log/*log /var/lib/apt/lists/* /var/log/apt/* /var/lib/dpkg/*-old /var/cache/debconf/*-old
-
-COPY consul2istio /usr/local/bin/
-ENTRYPOINT /usr/local/bin/consul2istio -consulAddress=$consulAddress
+COPY ${CONSUL2ISTIO_BIN_DIR}/${ARCH}/${OS}/consul2istio /usr/local/bin/
+ENTRYPOINT /usr/local/bin/consul2istio
